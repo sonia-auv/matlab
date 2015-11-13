@@ -13,7 +13,7 @@ function INS_EKF_IMU_DVL_BARO(block)
 %   1- Aided Navigation - GPS with High Rate Sensors - Jay A. Farrell - 2008
 %   2- Estimation Techniques for Low-Cost Inertial Navigation - Eun-Hwan Shin - 2005
 %   3- Système de Navigation Hybride GPS/INS - Maîtrise Philippe Lavoie - 2012
-%
+%   4- 
 %
     setup(block);
 end
