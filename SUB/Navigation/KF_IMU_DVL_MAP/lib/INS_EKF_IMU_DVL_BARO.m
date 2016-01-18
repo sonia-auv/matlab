@@ -4,10 +4,15 @@ function INS_EKF_IMU_DVL_BARO(block)
 %   Accronymes :
 %   INS : Inertial Navigation System
 %   EKF : Extended Kalman Filter
+%   IMU : Inertial Measurement Unit
+%   ACC : Accelerometer
+%   GYR : Gyroscope
+%   MAG : Magnetometer
+%   DVL : Doppler Velocity Log
 %
-%   Auteur: Adrien Kerroux : adrienkerroux@gmail.com
+%   Autor: Adrien Kerroux : adrienkerroux@gmail.com
 %   SONIA 2015
-%   17 Octobre 2015
+%   14 Novembre 2015
 %
 %   References:
 %   1- Aided Navigation - GPS with High Rate Sensors - Jay A. Farrell - 2008
@@ -24,7 +29,7 @@ function setup(block)
 
     %% Register number of input port and output port
     block.NumInputPorts  = 5;
-    block.NumOutputPorts = 2;
+    block.NumOutputPorts = 4;
 
     %% Setup functional port properties
     block.SetPreCompInpPortInfoToDynamic;
@@ -38,9 +43,9 @@ function setup(block)
     block.InputPort(1).SamplingMode = 'Sample';
     block.InputPort(1).DirectFeedthrough = false;
 
-    % Euler
+    % Quaternions
     block.InputPort(2).SampleTime  = [dt_IMU 0];
-    block.InputPort(2).Dimensions    = 3;
+    block.InputPort(2).Dimensions    = 4;
     block.InputPort(2).SamplingMode = 'Sample';
     block.InputPort(2).DirectFeedthrough = false;
 
@@ -69,10 +74,20 @@ function setup(block)
     block.OutputPort(1).SamplingMode = 'Sample';  
     block.OutputPort(1).SampleTime = [dt 0];
     
-    % delta State vector
+    % Kalman State vector
     block.OutputPort(2).Dimensions   = 16;
     block.OutputPort(2).SamplingMode = 'Sample';  
     block.OutputPort(2).SampleTime = [dt 0];
+    
+    % Residuals
+    block.OutputPort(3).Dimensions   = 10;
+    block.OutputPort(3).SamplingMode = 'Sample';  
+    block.OutputPort(3).SampleTime = [dt 0];
+    
+    % Measurements variances
+    block.OutputPort(4).Dimensions   = 10;
+    block.OutputPort(4).SamplingMode = 'Sample';  
+    block.OutputPort(4).SampleTime = [dt 0];
 
     %% Set the block simStateCompliance to default (i.e., same as a built-in block)
     block.SimStateCompliance = 'DefaultSimState';
@@ -98,6 +113,8 @@ function SetInpPortSM(block, idx, fd)
 
     block.OutputPort(1).SamplingMode = fd;
     block.OutputPort(2).SamplingMode = fd;
+    block.OutputPort(3).SamplingMode = fd;
+    block.OutputPort(4).SamplingMode = fd;
 end
 
 % Set input port sample time
@@ -106,7 +123,7 @@ function SetInpPortST(block, idx, st)
     global dt dt_IMU dt_DVL dt_BARO;
 
     block.InputPort(1).SampleTime = [dt_IMU 0]; % acc gyro
-    block.InputPort(2).SampleTime = [dt_IMU 0]; % euler
+    block.InputPort(2).SampleTime = [dt_IMU 0]; % quaternions
     block.InputPort(3).SampleTime = [dt_DVL 0]; % dvl
     block.InputPort(4).SampleTime = [dt_BARO 0]; % baro
     block.InputPort(5).SampleTime = [dt 0]; % time
@@ -120,13 +137,16 @@ function SetOutPortST(block, idx, st)
 
     block.OutputPort(1).SampleTime = [dt 0]; % X
     block.OutputPort(2).SampleTime = [dt 0]; % dX
+    block.OutputPort(3).SampleTime = [dt 0]; % dZ
+    block.OutputPort(4).SampleTime = [dt 0]; % Zvar
+    
 end
 
 
 % Do post-propagation process
 function DoPostPropSetup(block)
     %% Setup DWork
-    block.NumDworks = 2;
+    block.NumDworks = 4;
 
     % States
     block.Dwork(1).Name = 'X';
@@ -141,7 +161,20 @@ function DoPostPropSetup(block)
     block.Dwork(2).DatatypeID      = 0;
     block.Dwork(2).Complexity      = 0;
     block.Dwork(2).UsedAsDiscState = true;
-
+    
+    % Residuals
+    block.Dwork(3).Name = 'dZ';
+    block.Dwork(3).Dimensions      = 10;
+    block.Dwork(3).DatatypeID      = 0;
+    block.Dwork(3).Complexity      = 0;
+    block.Dwork(3).UsedAsDiscState = true;
+    
+    % Measurement Variances
+    block.Dwork(4).Name = 'Zvar';
+    block.Dwork(4).Dimensions      = 10;
+    block.Dwork(4).DatatypeID      = 0;
+    block.Dwork(4).Complexity      = 0;
+    block.Dwork(4).UsedAsDiscState = true;
 
 end
 
@@ -151,6 +184,8 @@ function InitConditions(block)
 
     block.Dwork(1).Data = X0;    
     block.Dwork(2).Data = zeros(16,1);
+    block.Dwork(3).Data = zeros(10,1);
+    block.Dwork(4).Data = zeros(10,1);
   
 end
   
@@ -162,29 +197,42 @@ function Output(block)
     if block.OutputPort(2).IsSampleHit
         block.OutputPort(2).Data = block.Dwork(2).Data;
     end
+    if block.OutputPort(3).IsSampleHit
+        block.OutputPort(3).Data = block.Dwork(3).Data;
+    end
+    if block.OutputPort(4).IsSampleHit
+        block.OutputPort(4).Data = block.Dwork(4).Data;
+    end
     
 end
 
 
 function Update(block)
     
+    global ge w_ie;
     global dt dt_IMU dt_DVL dt_BARO;
-    global P0 Qc;
-    global ge;
-    global TIME_STATIC TOLERANCE_ACC TOLERANCE_GYRO;
-    global CRIT_EULER_PHI_THETA CRIT_EULER_PSI;
-    global CRIT_DVL_X_Y CRIT_DVL_Z CRIT_DVL_ERR;
-    global CRIT_BARO;
-    global CRIT_ZERO_UPDATE;
+    global me_X me_Y me_Z meTOT me_dec me_inc;
     global l_pD l_pp;
+    global X0;
+    global TIME_STATIC CRIT_STATIC_ACC CRIT_STATIC_GYRO;
+    global SIGMA_MEAS_IMU_ROLL;
+    global SIGMA_MEAS_IMU_PITCH;
+    global SIGMA_MEAS_IMU_YAW;
+    global SIGMA_MEAS_DVL_X;
+    global SIGMA_MEAS_DVL_Y;
+    global SIGMA_MEAS_DVL_Z;
+    global SIGMA_MEAS_BARO;
+    global SIGMA_MEAS_STATIC;
+    global P0 Qc;
+    global ACTIVE;
     
     persistent P;
-    persistent counter;
+    persistent counter_static;
     persistent imuHasNewData dvlHasNewData baroHasNewData;
     
     if( isempty(P) )
         P = P0;
-        counter = 0;
+        counter_static = 0;
         
     end
     
@@ -196,7 +244,7 @@ function Update(block)
     
     % Check measurements
     if mod(time,dt_IMU) == 0
-        imuHasNewData = 1*0; % ATTENTION
+        imuHasNewData = 1; % ATTENTION
     end
     
     if mod(time,dt_DVL) == 0
@@ -204,7 +252,7 @@ function Update(block)
     end
     
     if mod(time,dt_BARO) == 0
-        baroHasNewData = 1*0; % ATTENTION
+        baroHasNewData = 1; % ATTENTION
     end
 
     if(mod(time,dt) == 0)
@@ -225,8 +273,14 @@ function Update(block)
         d_bias_gyr = block.Dwork(2).Data(13:15);
         d_bias_baro = block.Dwork(1).Data(16);
         
-        % Inertial data extraction
-        ACC_GYRO = block.InputPort(1).Data;
+        % Inertial data extraction And negative it
+        ACC_GYRO(1,1) = block.InputPort(1).Data(1);
+        ACC_GYRO(2,1) = -block.InputPort(1).Data(2);
+        ACC_GYRO(3,1) = -block.InputPort(1).Data(3);
+        ACC_GYRO(4,1) = block.InputPort(1).Data(4);
+        ACC_GYRO(5,1) = -block.InputPort(1).Data(5);
+        ACC_GYRO(6,1) = -block.InputPort(1).Data(6);
+        ACC_GYRO
         
         % Corrections with Kalman states
         pos_n = pos_n + d_pos;
@@ -262,21 +316,14 @@ function Update(block)
         g_n = [0; 0; ge];
         
         % Velocity kinematic equation (12.2) - Farrell
-        f_b = f_b - R_n_b*g_n; % ATTENTION TEMPORAIRE
         v_dot_b = f_b + R_n_b*g_n; % We assume no corriolis effect ( w_in_n = 0 );
-
         % Integrate numericaly using Euler except for quaternion integrated
         % using an exact solution and bias which are not propagated
         pos_n = pos_n + p_dot_n*dt;
         vel_b = vel_b + v_dot_b*dt;
         
-        % Reload state in Dwork
-        block.Dwork(1).Data(1:3) = pos_n;
-        block.Dwork(1).Data(4:6) = vel_b;
-        block.Dwork(1).Data(7:10) = b; % Quaternions
-        block.Dwork(1).Data(11:13) = bias_acc;
-        block.Dwork(1).Data(14:16) = bias_gyr;
-        block.Dwork(1).Data(17) = bias_baro;
+        % Reload state
+        X_k = [pos_n;vel_b;b;bias_acc;bias_gyr;bias_baro];
 
         %% Matrix F Elements with dx_dot = F*dx + G*w
         % F_vp, F_rp and w_ie neglected
@@ -311,17 +358,21 @@ function Update(block)
         %%%%%%%%%%%%%%%%%%%
 
         % Test if AUV is static
-        if norm(w_ib_b) < TOLERANCE_GYRO && abs(norm(R_b_n*f_b) - norm(g_n)) < TOLERANCE_ACC
+        if norm(w_ib_b) < CRIT_STATIC_GYRO && abs(norm(R_b_n*f_b) - norm(g_n)) < CRIT_STATIC_ACC
 
-            counter = counter + 1;
+            counter_static = counter_static + 1;
 
         else
 
-            counter = 0;
+            counter_static = 0;
 
         end
 
-        isStatic = (counter*dt > TIME_STATIC); % Check if statix
+        if counter_static*dt > TIME_STATIC
+            isStatic = 1
+        else
+            isStatic = 0;
+        end
 
         % Discretization
         G_k = G;
@@ -338,8 +389,8 @@ function Update(block)
         %% UPDATE %%
         %%%%%%%%%%%%
 
-        if ( (imuHasNewData == 1) || (dvlHasNewData == 1) || (baroHasNewData == 1) || isStatic ) % Apply correction when new measurements are available from GPS, MAG or BARO
-            
+        if ( (imuHasNewData == ACTIVE(1)) || (dvlHasNewData == ACTIVE(2)) || (baroHasNewData == ACTIVE(3)) || (isStatic == ACTIVE(4)) ) % Apply correction when new measurements are available from GPS, MAG or BARO
+            disp('update');
             % Set d_z to zero
             d_z_euler = zeros(3,1);
             d_z_dvl = zeros(3,1);
@@ -358,15 +409,18 @@ function Update(block)
             H_BARO_k = zeros(1,16);
             H_ZERO_k = zeros(3,16);
             
-            if imuHasNewData == 1
+            if imuHasNewData == ACTIVE(1)
                 
-                euler_meas = block.InputPort(2).Data; % Extract measurements
+                quat_meas = block.InputPort(2).Data; % Extract measurements
                 
                 % Aiding Measurement Model
                 [phi, theta, psi] = quat2euler(b);
-                skew_T = [cos(psi)*cos(theta)   -sin(psi)   0;
-                          sin(psi)*cos(theta)   cos(psi)    0;
-                          -sin(theta)           0           1];
+                [phi_meas, theta_meas, psi_meas] = quat2euler(quat_meas);
+                euler_meas = [phi_meas;theta_meas;psi_meas];
+                
+                skew_T = [cos(psi_meas)*cos(theta_meas)     -sin(psi_meas)	0;
+                          sin(psi_meas)*cos(theta_meas)     cos(psi_meas)	0;
+                          -sin(theta_meas)                  0               1];
                 inv_skew_T = inv(skew_T);
                 H_EULER = [zeros(3,3) zeros(3,3) inv_skew_T zeros(3,3) zeros(3,3) zeros(3,1)];
                 H_EULER_k = H_EULER;
@@ -374,14 +428,15 @@ function Update(block)
                 euler_hat = [phi;theta;psi]; % Prediction
                 
                 d_z_euler = euler_meas - euler_hat;
+                block.Dwork(3).Data(1:3) = d_z_euler;
                 
                 % Measurements covariance matrix
-                R_EULER_k = 1e1*[CRIT_EULER_PHI_THETA CRIT_EULER_PHI_THETA CRIT_EULER_PSI];
+                R_EULER_k = [SIGMA_MEAS_IMU_ROLL SIGMA_MEAS_IMU_PITCH SIGMA_MEAS_IMU_YAW];
                 
                 imuHasNewData = 0;
             end
             
-            if dvlHasNewData == 1
+            if dvlHasNewData == ACTIVE(2)
                 
                 dvl_meas = block.InputPort(3).Data(1:3); % Extract measurements
                 bottom_status = block.InputPort(3).Data(4);
@@ -396,17 +451,18 @@ function Update(block)
                     dvl_hat = vel_b + cross(w_ib_b,l_pD); % Prediction
 
                     d_z_dvl = dvl_meas - dvl_hat;
+                    block.Dwork(3).Data(4:6) = d_z_dvl;
 
                     % Measurements covariance matrix
-                    R_DVL_k = (1+norm(velocity_error)*CRIT_DVL_ERR)*[CRIT_DVL_X_Y CRIT_DVL_X_Y CRIT_DVL_Z];
+                    R_DVL_k = (1+norm(velocity_error))*[SIGMA_MEAS_DVL_X SIGMA_MEAS_DVL_Y SIGMA_MEAS_DVL_Z];
                 end
                 
                 dvlHasNewData = 0;
             end
             
-            if baroHasNewData == 1
+            if baroHasNewData == ACTIVE(3)
                 
-                baro_meas = block.InputPort(4) - bias_baro;
+                baro_meas = block.InputPort(4).Data - bias_baro;
                 
                 if baro_meas > 100000 % is underwater ? [Pa]
                     
@@ -421,9 +477,10 @@ function Update(block)
                     depth_hat = pos_n(3); % Prediction
 
                     d_z_baro = depth_meas - depth_hat;
+                    block.Dwork(3).Data(7) = d_z_baro;
 
                     % Measurements covariance matrix
-                    R_BARO_k = CRIT_BARO;
+                    R_BARO_k = SIGMA_MEAS_BARO;
                 end
                 
                 baroHasNewData = 0;
@@ -434,15 +491,16 @@ function Update(block)
                 zero_meas = [0;0;0]; % Extract measurements
                 
                 % Aiding Measurement Model
-                H_ZERO = [zeros(3,3) eye(3) zeros(3,3) zeros(3,3) zeros(3,1)];
+                H_ZERO = [zeros(3,3) eye(3) zeros(3,3) zeros(3,3) zeros(3,3) zeros(3,1)];
                 H_ZERO_k = H_ZERO;
                 
                 zero_hat = vel_b; % Prediction
                 
                 d_z_zero = zero_meas - zero_hat;
+                block.Dwork(3).Data(8:10) = d_z_zero;
                 
                 % Measurements covariance matrix
-                R_ZERO_k = [CRIT_ZERO_UPDATE CRIT_ZERO_UPDATE CRIT_ZERO_UPDATE];
+                R_ZERO_k = [SIGMA_MEAS_STATIC SIGMA_MEAS_STATIC SIGMA_MEAS_STATIC];
                 
             end
 
@@ -472,6 +530,7 @@ function Update(block)
         else
             block.Dwork(2).Data= zeros(16,1);
         end
+        block.Dwork(1).Data = X_k;
 
     end
 
