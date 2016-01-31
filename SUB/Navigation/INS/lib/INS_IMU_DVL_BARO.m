@@ -12,20 +12,19 @@ function INS_IMU_DVL_BARO(block)
 %
 %   Autor: Adrien Kerroux : adrienkerroux@gmail.com
 %   SONIA 2015
-%   14 Novembre 2015
+%   30 Janvier 2016
 %
 %   References:
 %   1- Aided Navigation - GPS with High Rate Sensors - Jay A. Farrell - 2008
 %   2- Estimation Techniques for Low-Cost Inertial Navigation - Eun-Hwan Shin - 2005
 %   3- Système de Navigation Hybride GPS/INS - Maîtrise Philippe Lavoie - 2012
-%   4- 
 %
     setup(block);
 end
 
 function setup(block)
 
-    global dt dt_IMU dt_DVL dt_BARO;
+    global dt dt_IMU dt_MAG dt_DVL dt_BARO;
 
     %% Register number of input port and output port
     block.NumInputPorts  = 5;
@@ -43,15 +42,16 @@ function setup(block)
     block.InputPort(1).SamplingMode = 'Sample';
     block.InputPort(1).DirectFeedthrough = false;
 
-    % Quaternions
-    block.InputPort(2).SampleTime  = [dt_IMU 0];
-    block.InputPort(2).Dimensions    = 4;
+    
+    % Mag
+    block.InputPort(2).SampleTime  = [dt_MAG 0];
+    block.InputPort(2).Dimensions    = 3;
     block.InputPort(2).SamplingMode = 'Sample';
     block.InputPort(2).DirectFeedthrough = false;
-
+    
     % DVL
     block.InputPort(3).SampleTime  = [dt_DVL 0];
-    block.InputPort(3).Dimensions    = 5;
+    block.InputPort(3).Dimensions    = 3;
     block.InputPort(3).SamplingMode = 'Sample';
     block.InputPort(3).DirectFeedthrough = false;
     

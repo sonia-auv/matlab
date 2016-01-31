@@ -3,9 +3,9 @@
 %%%%%%%%%%%%%%%%%%%
 
 % CONSTANT VALUES
-global ge w_ie;
+global ge;
 global dt dt_IMU dt_MAG dt_DVL dt_BARO;
-global me_X me_Y me_Z meTOT me_dec me_inc;
+global me me_dec me_inc;
 % AUV PHYSICS
 global l_pD l_pp;
 % INITIALIZATION
@@ -32,12 +32,12 @@ global ACTIVE;
 t_init = 0.5;
 t_start = max([DATA_IMU(1,1);DATA_MAG(1,1);DATA_DVL(1,1)])+t_init;
 t_end = min([DATA_IMU(1,end);DATA_MAG(1,end);DATA_DVL(1,end)]);
-dt = 1/50;
+dt = 1/100;
 dt_IMU = 1/100;
 dt_MAG = 1/100;
-dt_DVL = 1/7;
+dt_DVL = 1/3.5;
 dt_BARO = 1/100;
-t_simulation = t_end-t_start;
+t_simulation = t_end-t_start
 
 %%%%%%%%%%%%%%%%%%%%%%%
 %% CONTROLS & TUNING %%
@@ -92,14 +92,9 @@ SIGMA_WALK_BIAS_BARO = 0.001;
 %%%%%%%%%%%%%%%%%%%%%
 %% CONSTANT VALUES %%
 %%%%%%%%%%%%%%%%%%%%%
-ge = 9.8065; % gravity [m/s/s]
-me_X = 0.17749; % Magnetic tangent X [Gauss]
-me_Y = -0.046285; % Magnetic tangent Y [Gauss]
-me_Z = 0.51005; % Magnetic tangent Z [Gauss]
-meTOT = 0.54203; % Magnetic total intensity [Gauss]
-me_dec = -0.25437; % local magnetic field declination [rad] (positive eastwards)
-me_inc = 1.226; % local magnetic field inclination [rad] (positive downwards)
-w_ie = 7.2921e-5; % earth angular speed [rad/s]
+ge = 9.795; % gravity [m/s/s]
+me_dec = 0.2034; % local magnetic field declination [rad] (positive eastwards)
+me_inc = 1.009; % local magnetic field inclination [rad] (positive downwards)
 
 %%%%%%%%%%%%%%%%%
 %% AUV PHYSICS %%
@@ -108,15 +103,62 @@ w_ie = 7.2921e-5; % earth angular speed [rad/s]
 l_pD = [0;0;0.15]; % IMU - DVL
 l_pp = [0;-0.10;-0.5]; % IMU - BARO
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% STATIC % STATIONNARY STATE DETECTION %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+TIME_STATIC = 0.2; % Time required to admit static state [s] during window variance calculation
+CRIT_STATIC_ACC = 1; % Tolerance threshold normSq accel [m/s/s]
+CRIT_STATIC_GYRO = 0.02; % Tolerance threshold normSq gyro [rad/s]
+CRIT_STATION_ACC = 1;
+CRIT_STATION_NORM = 1;
+
+%%%%%%%%%%%%%%%%%%%%%
+%% DATA EXTRACTION %%
+%%%%%%%%%%%%%%%%%%%%%
+start_record_IMU = find(DATA_IMU(1,:) >= t_start,1,'first');
+final_record_IMU = find(DATA_IMU(1,:) >= t_end,1,'first');
+Sensors_IMU = [
+    DATA_IMU(1,start_record_IMU:final_record_IMU)- t_start;
+    DATA_IMU(2,start_record_IMU:final_record_IMU); % AccX
+    -DATA_IMU(3,start_record_IMU:final_record_IMU); % AccY - IMU reversed on sub
+    -DATA_IMU(4,start_record_IMU:final_record_IMU); % AccZ - IMU reversed on sub
+    DATA_IMU(5,start_record_IMU:final_record_IMU); % GyrX
+    -DATA_IMU(6,start_record_IMU:final_record_IMU); % GyrY - IMU reversed on sub
+    -DATA_IMU(7,start_record_IMU:final_record_IMU); % GyrZ - IMU reversed on sub
+    ];
+save Sensors_IMU Sensors_IMU
+
+start_record_MAG = find(DATA_MAG(1,:) >= t_start,1,'first');
+final_record_MAG = find(DATA_MAG(1,:) >= t_end,1,'first');
+Sensors_MAG = [
+    DATA_MAG(1,start_record_MAG:final_record_MAG)- t_start;
+    DATA_MAG(2,start_record_MAG:final_record_MAG); % MagX
+    -DATA_MAG(3,start_record_MAG:final_record_MAG); % MagY - IMU reversed on sub
+    -DATA_MAG(4,start_record_MAG:final_record_MAG); % MagZ - IMU reversed on sub
+    ];
+save Sensors_MAG Sensors_MAG
+
+start_record_DVL = find(DATA_DVL(1,:) >= t_start,1,'first');
+final_record_DVL = find(DATA_DVL(1,:) >= t_end,1,'first');
+Sensors_DVL = [
+    DATA_DVL(1,start_record_DVL:final_record_DVL)- t_start;
+    DATA_DVL(2,start_record_DVL:final_record_DVL); % DvlX
+    -DATA_DVL(3,start_record_DVL:final_record_DVL); % DvlY
+    -DATA_DVL(4,start_record_DVL:final_record_DVL); % DvlZ
+    ];
+save Sensors_DVL Sensors_DVL
+
+
 %%%%%%%%%%%%%%%%%%%%
 %% INITIALIZATION %%
 %%%%%%%%%%%%%%%%%%%%
 pos0 = [0;0;0]; % depth at surface water
 v0 = [0;0;0];
 
-gx_mean = mean(-DATA_IMU(2,1+t_record/dt_IMU:(t_record+t_init)/dt_IMU));
-gy_mean = mean(-DATA_IMU(3,1+t_record/dt_IMU:(t_record+t_init)/dt_IMU));
-gz_mean = mean(-DATA_IMU(4,1+t_record/dt_IMU:(t_record+t_init)/dt_IMU));
+start_init_IMU = find(DATA_IMU(1,:) >= (t_start-t_init),1,'first');
+gx_mean = mean(-DATA_IMU(2,start_init_IMU:start_record_IMU-1));
+gy_mean = mean(-DATA_IMU(3,start_init_IMU:start_record_IMU-1));
+gz_mean = mean(-DATA_IMU(4,start_init_IMU:start_record_IMU-1));
 
 roll  = atan2(gy_mean,gz_mean); % Calculate initial roll angle - Equation 10.14 - Farrell
 pitch = atan2(-gx_mean , sqrt(gy_mean^2 + gz_mean^2)); % Calculate initial pitch angle - Equation 10.15 - Farrell
@@ -127,29 +169,19 @@ R_b2w = [cos(pitch) , sin(pitch)*sin(roll) , sin(pitch)*cos(roll) ;
     -sin(pitch) , cos(pitch)*sin(roll) , cos(pitch)*cos(roll)];
 
 % Calculate the mean of Magnetometer measurements - Equation 10.17 - Farrell
-mx_mean = mean(DATA_MAG(2,1+t_record/dt_MAG:(t_record+t_init)/dt_MAG)); % X axis in Gauss
-my_mean = mean(DATA_MAG(3,1+t_record/dt_MAG:(t_record+t_init)/dt_MAG)); % Y axis in Gauss
-mz_mean = mean(DATA_MAG(4,1+t_record/dt_MAG:(t_record+t_init)/dt_MAG)); % Z axis in Gauss
+start_init_MAG = find(DATA_MAG(1,:) >= (t_start-t_init),1,'first');
+mx_mean = mean(DATA_MAG(2,start_init_MAG:start_record_MAG-1)); % X axis in Gauss
+my_mean = mean(DATA_MAG(3,start_init_MAG:start_record_MAG-1)); % Y axis in Gauss
+mz_mean = mean(DATA_MAG(4,start_init_MAG:start_record_MAG-1)); % Z axis in Gauss
 
-% Code to calculate heading - From AHRS - Guillaume
+% Code to calculate headingS
 m_b = [mx_mean;my_mean;mz_mean];
 m_b_normal = m_b / norm(m_b,'fro');
+me = norm(m_b); % Magnetic total intensity [Gauss]
 
-m_w = R_b2w * m_b_normal;
+m_w = R_b2w * m_b;
 
-% Declination and Inclination - AHRS - Guillaume
-mag_D = -14.603 * pi/180; % ATTENTION: to change according to location
-mag_I = +70.226 * pi/180; % ATTENTION: to change according to location
-
-m1 = cos(mag_I)*cos(mag_D);
-m2 = cos(mag_I)*sin(mag_D);
-
-M = [m1,m2;
-    m2,-m1];
-
-m_w2 = M\[m_w(1);m_w(2)];
-
-yaw = atan2(m_w2(2) , m_w2(1));
+yaw = atan2(-m_w(2) , m_w(1));
 
 R0_b_n = [cos(pitch)*cos(yaw) , sin(roll)*sin(pitch)*cos(yaw) - cos(roll)*sin(yaw) , cos(roll)*sin(pitch)*cos(yaw) + sin(roll)*sin(yaw);
     cos(pitch)*sin(yaw) , sin(roll)*sin(pitch)*sin(yaw) + cos(roll)*cos(yaw) , cos(roll)*sin(pitch)*sin(yaw) - sin(roll)*cos(yaw);
@@ -163,15 +195,6 @@ mag_bias0 = [0;0;0];
 baro_bias0 = 0;
 
 X0 = [pos0; v0; b0; acc_bias0; gyro_bias0; mag_bias0; baro_bias0];
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% STATIC % STATIONNARY STATE DETECTION %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-TIME_STATIC = 0.2; % Time required to admit static state [s] during window variance calculation
-CRIT_STATIC_ACC = 1; % Tolerance threshold normSq accel [m/s/s]
-CRIT_STATIC_GYRO = 0.02; % Tolerance threshold normSq gyro [rad/s]
-CRIT_STATION_ACC = 1;
-CRIT_STATION_NORM = 1;
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% EXTENDED KALMAN FILTER %%
