@@ -75,7 +75,7 @@ function setup(block)
     block.OutputPort(1).SampleTime = [dt 0];
     
     % Kalman State vector
-    block.OutputPort(2).Dimensions   = 16;
+    block.OutputPort(2).Dimensions   =16;
     block.OutputPort(2).SamplingMode = 'Sample';  
     block.OutputPort(2).SampleTime = [dt 0];
     
@@ -120,10 +120,10 @@ end
 % Set input port sample time
 function SetInpPortST(block, idx, st)
 
-    global dt dt_IMU dt_DVL dt_BARO;
+    global dt dt_MAG dt_IMU dt_DVL dt_BARO;
 
     block.InputPort(1).SampleTime = [dt_IMU 0]; % acc gyro
-    block.InputPort(2).SampleTime = [dt_IMU 0]; % quaternions
+    block.InputPort(2).SampleTime = [dt_MAG 0]; % mag
     block.InputPort(3).SampleTime = [dt_DVL 0]; % dvl
     block.InputPort(4).SampleTime = [dt_BARO 0]; % baro
     block.InputPort(5).SampleTime = [dt 0]; % time
@@ -209,42 +209,35 @@ end
 
 function Update(block)
     
-    global ge w_ie;
-    global dt dt_IMU dt_DVL dt_BARO;
-    global me_X me_Y me_Z meTOT me_dec me_inc;
+    global ge;
+    global dt dt_MAG dt_DVL dt_BARO;
     global l_pD l_pp;
-    global X0;
-    global TIME_STATIC CRIT_STATIC_ACC CRIT_STATIC_GYRO;
-    global SIGMA_MEAS_IMU_ROLL;
-    global SIGMA_MEAS_IMU_PITCH;
-    global SIGMA_MEAS_IMU_YAW;
+    global CRIT_STATION_ACC CRIT_STATION_NORM;
+    global SIGMA_MEAS_GRAVITY;
+    global SIGMA_MEAS_MAG;
     global SIGMA_MEAS_DVL_X;
     global SIGMA_MEAS_DVL_Y;
     global SIGMA_MEAS_DVL_Z;
     global SIGMA_MEAS_BARO;
-    global SIGMA_MEAS_STATIC;
     global P0 Qc;
     global ACTIVE;
     
     persistent P;
-    persistent counter_static;
-    persistent imuHasNewData dvlHasNewData baroHasNewData;
+    persistent magHasNewData dvlHasNewData baroHasNewData;
     
     if( isempty(P) )
         P = P0;
-        counter_static = 0;
-        
-    end
     
-    imuHasNewData = 0;
-    dvlHasNewData = 0;
-    baroHasNewData = 0;
+    end
     
     time = block.InputPort(5).Data;
     
     % Check measurements
-    if mod(time,dt_IMU) == 0
-        imuHasNewData = 1; % ATTENTION
+    dvlHasNewData = 0;
+    baroHasNewData = 0;
+    
+    if mod(time,dt_MAG) == 0
+        magHasNewData = 1; % ATTENTION
     end
     
     if mod(time,dt_DVL) == 0
@@ -255,91 +248,63 @@ function Update(block)
         baroHasNewData = 1; % ATTENTION
     end
 
-    if(mod(time,dt) == 0)
+    if(block.InputPort(1).IsSampleHit)
         
         % States extraction
         pos_n = block.Dwork(1).Data(1:3);
-        vel_b = block.Dwork(1).Data(4:6);
-        b = block.Dwork(1).Data(7:10); % Quaternions
+        vel_n = block.Dwork(1).Data(4:6);
+        b_k_hat = block.Dwork(1).Data(7:10); % Quaternions
         bias_acc = block.Dwork(1).Data(11:13);
         bias_gyr = block.Dwork(1).Data(14:16);
         bias_baro = block.Dwork(1).Data(17);
-
-        % Kalman states extraction
-        d_pos = block.Dwork(2).Data(1:3);
-        d_vel = block.Dwork(2).Data(4:6);
-        rho = block.Dwork(2).Data(7:9); % small angles vector
-        d_bias_acc = block.Dwork(2).Data(10:12);
-        d_bias_gyr = block.Dwork(2).Data(13:15);
-        d_bias_baro = block.Dwork(1).Data(16);
         
         % Inertial data extraction And negative it
-        ACC_GYRO(1,1) = block.InputPort(1).Data(1);
-        ACC_GYRO(2,1) = -block.InputPort(1).Data(2);
-        ACC_GYRO(3,1) = -block.InputPort(1).Data(3);
-        ACC_GYRO(4,1) = block.InputPort(1).Data(4);
-        ACC_GYRO(5,1) = -block.InputPort(1).Data(5);
-        ACC_GYRO(6,1) = -block.InputPort(1).Data(6);
-        ACC_GYRO
-        
-        % Corrections with Kalman states
-        pos_n = pos_n + d_pos;
-        vel_b = vel_b + d_vel;
-        bias_acc = bias_acc + d_bias_acc;
-        bias_gyr = bias_gyr + d_bias_gyr;
-        bias_baro = bias_baro + d_bias_baro;
+        ACC_GYRO = block.InputPort(1).Data;
 
         % IMU Processing
         f_b = ACC_GYRO(1:3) - bias_acc; % specific force
         w_ib_b = ACC_GYRO(4:6) - bias_gyr; % angular rates
+        
+        % Propagates exact quaternion
+        b_k = exact_quat(w_ib_b,dt,b_k_hat);
 
         % Estimation of rotation matrix navigation frame to body frame
-        R_n_b_hat = quat2Rot(b); % Transform from quaternion to DCM
-        R_b_n_hat = R_n_b_hat'; % Transposed
-        
-        % Small angles matrix
-        Prho = skew_matrix(rho); % Equation (10.28) - Farrell
-
-        R_b_n = (eye(3) + Prho)*R_b_n_hat; % Equation (10.32) - Farrell
-        R_n_b = R_b_n';
-        b = Rot2Quat(R_n_b); % Transform from DCM to quaternion
-        b = exact_quat(w_ib_b,dt,b); % Exact solution - Farrell - Page 508
+        R_n_b = quat2Rot(b_k); % Transform from quaternion to DCM
+        R_b_n = R_n_b'; % Transposed
 
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         %% INS Mechanization Equations %%
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
         % Position kinematic equation (12.20) - Farrell
-        p_dot_n = R_b_n*vel_b;
+        p_dot_n = vel_n;
 
         % Gravity in navigation frame
         g_n = [0; 0; ge];
         
         % Velocity kinematic equation (12.2) - Farrell
-        v_dot_b = f_b + R_n_b*g_n; % We assume no corriolis effect ( w_in_n = 0 );
+        v_dot_n = R_b_n*f_b + g_n; % We assume no corriolis effect ( w_in_n = 0 );
         % Integrate numericaly using Euler except for quaternion integrated
         % using an exact solution and bias which are not propagated
         pos_n = pos_n + p_dot_n*dt;
-        vel_b = vel_b + v_dot_b*dt;
+        vel_n = vel_n + v_dot_n*dt;
         
         % Reload state
-        X_k = [pos_n;vel_b;b;bias_acc;bias_gyr;bias_baro];
+        X_k = [pos_n;vel_n;b_k;bias_acc;bias_gyr;bias_baro];
 
         %% Matrix F Elements with dx_dot = F*dx + G*w
         % F_vp, F_rp and w_ie neglected
         
-        F_pv = R_b_n;
+        F_pv = eye(3);
         
-        F_vr = R_n_b*skew_matrix(g_n);
+        F_vr = skew_matrix(g_n);
         
-        F_vbf = -eye(3);
-        
-        F_vbg = -skew_matrix(vel_b);
+        F_vbf = -R_b_n;
         
         F_rbg = -R_b_n;
         
         F = [   zeros(3,3)	F_pv      	zeros(3,3)	zeros(3,3)	zeros(3,3)	zeros(3,1);
-                zeros(3,3)	zeros(3,3)	F_vr      	F_vbf       F_vbg     	zeros(3,1);
+                zeros(3,3)	zeros(3,3)	F_vr      	F_vbf       zeros(3,3) 	zeros(3,1);
                 zeros(3,3)	zeros(3,3)	zeros(3,3)	zeros(3,3)	F_rbg       zeros(3,1);
                 zeros(3,3)	zeros(3,3)	zeros(3,3)	zeros(3,3)	zeros(3,3)	zeros(3,1);
                 zeros(3,3)	zeros(3,3)	zeros(3,3)	zeros(3,3)	zeros(3,3)	zeros(3,1);
@@ -347,7 +312,7 @@ function Update(block)
         
         G = [
             zeros(3,3) zeros(3,3) zeros(3,3) zeros(3,3) zeros(3,1);
-            -eye(3)    F_vbg	  zeros(3,3) zeros(3,3) zeros(3,1);
+            -R_b_n     zeros(3,3) zeros(3,3) zeros(3,3) zeros(3,1);
             zeros(3,3) -R_b_n     zeros(3,3) zeros(3,3) zeros(3,1);
             zeros(3,3) zeros(3,3) eye(3,3)   zeros(3,3) zeros(3,1);
             zeros(3,3) zeros(3,3) zeros(3,3) eye(3,3)   zeros(3,1);
@@ -357,110 +322,114 @@ function Update(block)
         %% KALMAN FILTER %%
         %%%%%%%%%%%%%%%%%%%
 
-        % Test if AUV is static
-        if norm(w_ib_b) < CRIT_STATIC_GYRO && abs(norm(R_b_n*f_b) - norm(g_n)) < CRIT_STATIC_ACC
-
-            counter_static = counter_static + 1;
-
-        else
-
-            counter_static = 0;
-
-        end
-
-        if counter_static*dt > TIME_STATIC
-            isStatic = 1
-        else
-            isStatic = 0;
-        end
-
         % Discretization
         G_k = G;
-        
         Q = G_k*Qc*G_k'; % Equation (5.14) - Lavoie
+        ufw = norm(w_ib_b)^2;
+        Q_k = (Q+diag([ufw;ufw;ufw;0;0;0;0;0;0;0;0;0;0;0;0;0]))*dt;% 1st order Taylor series(Lavoie - Page 94)
         
-        Q_k = Q*dt + (F*Q + Q*F')*(dt^2)/2;% 2nd order Taylor series(Lavoie - Page 94)
-        
-        Phi_k = eye(length(F)) + (dt*F)^1/factorial(1) + (dt*F)^2/factorial(2); 
+        Phi_k = eye(length(F)) + (dt*F)^1/factorial(1); 
 
         P = Phi_k*P*Phi_k' + Q_k;
         
         %%%%%%%%%%%%
         %% UPDATE %%
         %%%%%%%%%%%%
+        
+        % test of stationarity of system
+        ufab = norm(R_b_n*f_b + g_n,'fro');
+        ufan = norm(f_b) - ge;
+        if  ufab < CRIT_STATION_ACC && ufan < CRIT_STATION_NORM
+            test_stationary = 1;
+        else
+            test_stationary = 0;
+        end
 
-        if ( (imuHasNewData == ACTIVE(1)) || (dvlHasNewData == ACTIVE(2)) || (baroHasNewData == ACTIVE(3)) || (isStatic == ACTIVE(4)) ) % Apply correction when new measurements are available from GPS, MAG or BARO
-            disp('update');
-            % Set d_z to zero
-            d_z_euler = zeros(3,1);
-            d_z_dvl = zeros(3,1);
-            d_z_baro = 0;
-            d_z_zero = zeros(3,1);
+        if ( (test_stationary == ACTIVE(1)) || (magHasNewData == ACTIVE(2)) || (dvlHasNewData == ACTIVE(3)) || (baroHasNewData == ACTIVE(4)) ) % Apply correction when new measurements are available from DVL, MAG, BARO
             
-            % Init large R
-            R_EULER_k    = 1e5*ones(1,3);
-            R_DVL_k    = 1e5*ones(1,3);
-            R_BARO_k   = 1e5;
-            R_ZERO_k   = 1e5*ones(1,3);
-            
-            % Init H matrix
-            H_EULER_k = zeros(3,16);
-            H_DVL_k = zeros(3,16);
-            H_BARO_k = zeros(1,16);
-            H_ZERO_k = zeros(3,16);
-            
-            if imuHasNewData == ACTIVE(1)
+            if test_stationary == ACTIVE(1)
+                disp('gravity');
                 
-                quat_meas = block.InputPort(2).Data; % Extract measurements
+                skew_g_n = skew_matrix(g_n); % Equation 10.42 - Farrell
+                H_GRAVITY = [zeros(3,3) zeros(3,3) -skew_g_n zeros(3,3) zeros(3,3) zeros(3,1)];
+                R_GRAVITY = SIGMA_MEAS_GRAVITY^2*(ufab + ufan + ufw)*eye(3);
                 
-                % Aiding Measurement Model
-                [phi, theta, psi] = quat2euler(b);
-                [phi_meas, theta_meas, psi_meas] = quat2euler(quat_meas);
-                euler_meas = [phi_meas;theta_meas;psi_meas];
+                K_GRAVITY = P*H_GRAVITY' / (H_GRAVITY*P*H_GRAVITY' + R_GRAVITY);
+                P = (eye(16)-K_GRAVITY*H_GRAVITY)*P;
                 
-                skew_T = [cos(psi_meas)*cos(theta_meas)     -sin(psi_meas)	0;
-                          sin(psi_meas)*cos(theta_meas)     cos(psi_meas)	0;
-                          -sin(theta_meas)                  0               1];
-                inv_skew_T = inv(skew_T);
-                H_EULER = [zeros(3,3) zeros(3,3) inv_skew_T zeros(3,3) zeros(3,3) zeros(3,1)];
-                H_EULER_k = H_EULER;
+                z_gravity_hat = -R_b_n*f_b;
+                z_gravity = g_n;
+                d_z_gravity = z_gravity-z_gravity_hat;
                 
-                euler_hat = [phi;theta;psi]; % Prediction
-                
-                d_z_euler = euler_meas - euler_hat;
-                block.Dwork(3).Data(1:3) = d_z_euler;
-                
-                % Measurements covariance matrix
-                R_EULER_k = [SIGMA_MEAS_IMU_ROLL SIGMA_MEAS_IMU_PITCH SIGMA_MEAS_IMU_YAW];
-                
-                imuHasNewData = 0;
+                d_X = K_GRAVITY * d_z_gravity;
+                [X_k, R_b_n] = updateStates(X_k, d_X);
+                R_n_b = R_b_n';
             end
             
-            if dvlHasNewData == ACTIVE(2)
+            if magHasNewData == ACTIVE(2)
+                disp('mag');
                 
-                dvl_meas = block.InputPort(3).Data(1:3); % Extract measurements
-                bottom_status = block.InputPort(3).Data(4);
-                velocity_error = block.InputPort(3).Data(5);
+                [phi,theta,psi]=quat2euler(X_k(7:10));
+                roll = phi;
+                pitch = theta;
+                yaw_hat = psi;
                 
-                if bottom_status == 0
-                    % Aiding Measurement Model
-                    skew_l_pD = skew_matrix(l_pD);
-                    H_DVL = [zeros(3,3) eye(3) zeros(3,3) zeros(3,3) skew_l_pD zeros(3,1)];
-                    H_DVL_k = H_DVL;
+                R_b2w = [cos(pitch) , sin(pitch)*sin(roll) , sin(pitch)*cos(roll) ;
+                0       ,      cos(roll)       ,     -sin(roll)       ;
+                -sin(pitch) , cos(pitch)*sin(roll) , cos(pitch)*cos(roll)];
 
-                    dvl_hat = vel_b + cross(w_ib_b,l_pD); % Prediction
-
-                    d_z_dvl = dvl_meas - dvl_hat;
-                    block.Dwork(3).Data(4:6) = d_z_dvl;
-
-                    % Measurements covariance matrix
-                    R_DVL_k = (1+norm(velocity_error))*[SIGMA_MEAS_DVL_X SIGMA_MEAS_DVL_Y SIGMA_MEAS_DVL_Z];
+                % Code to calculate headingS
+                m_b = block.InputPort(2).Data;
+                m_w = R_b2w * m_b;
+                yaw = atan2(-m_w(2) , m_w(1));
+                
+                Omega_T = [cos(psi)*cos(theta)  -sin(psi)   0;
+                    sin(psi)*cos(theta)         cos(psi)    0;
+                    -sin(theta)                 0           1];
+                inv_Omega_T = inv(Omega_T);
+                
+                H_MAG = [zeros(1,3) zeros(1,3) inv_Omega_T(3,:) zeros(1,3) zeros(1,3) zeros(1,1)];
+                R_MAG = SIGMA_MEAS_MAG;
+                K_MAG = P*H_MAG' / (H_MAG*P*H_MAG' + R_MAG);
+                
+                d_z_mag = yaw - yaw_hat;
+                
+                if d_z_mag < pi
+                    d_X = K_MAG * d_z_mag;
+                    [X_k, R_b_n] = updateStates(X_k, d_X);
+                    R_n_b = R_b_n';
+                    P = (eye(16)-K_MAG*H_MAG)*P;
                 end
+
+                
+                magHasNewData = 0;
+            end
+            
+            if dvlHasNewData == ACTIVE(3)
+                disp('DVL');
+                
+                DVL = block.InputPort(3).Data; % Extract measurements
+                
+                % Aiding Measurement Model
+                skew_l_pD = skew_matrix(l_pD);
+                H_DVL = [zeros(3,3) eye(3) zeros(3,3) zeros(3,3) skew_l_pD zeros(3,1)];
+                R_DVL = diag([SIGMA_MEAS_DVL_X SIGMA_MEAS_DVL_Y SIGMA_MEAS_DVL_Z]);
+
+                K_DVL = P*H_DVL' / (H_DVL*P*H_DVL' + R_DVL);
+                P = (eye(16)-K_DVL*H_DVL)*P;
+
+                DVL_hat = R_n_b*vel_n + cross(w_ib_b,l_pD); % Prediction
+
+                d_z_dvl = DVL - DVL_hat;
+                d_X = K_DVL * d_z_dvl;
+                [X_k, R_b_n] = updateStates(X_k, d_X);
+
                 
                 dvlHasNewData = 0;
             end
             
-            if baroHasNewData == ACTIVE(3)
+            if baroHasNewData == ACTIVE(4)
+                disp('BARO');
                 
                 baro_meas = block.InputPort(4).Data - bias_baro;
                 
@@ -472,61 +441,25 @@ function Update(block)
                     l_tp = R_b_n * l_pp;
                     skew_l_tp = skew_matrix(l_tp);
                     H_BARO = [0 0 1 zeros(1,3) -[0 0 1]*skew_l_tp zeros(1,3) zeros(1,3) 1/(1000*ge)];
-                    H_BARO_k = H_BARO;
+                    R_BARO = SIGMA_MEAS_BARO;
 
                     depth_hat = pos_n(3); % Prediction
-
                     d_z_baro = depth_meas - depth_hat;
-                    block.Dwork(3).Data(7) = d_z_baro;
-
-                    % Measurements covariance matrix
-                    R_BARO_k = SIGMA_MEAS_BARO;
+                    
+                    K_BARO = P*H_BARO' / (H_BARO*P*H_BARO' + R_BARO);
+                    P = (eye(16)-K_BARO*H_BARO)*P;
+                    
+                    d_X = K_BARO * d_z_baro;
+                    [X_k, R_b_n] = updateStates(X_k, d_X);
+                    
                 end
                 
                 baroHasNewData = 0;
             end
-            
-            if isStatic
                 
-                zero_meas = [0;0;0]; % Extract measurements
-                
-                % Aiding Measurement Model
-                H_ZERO = [zeros(3,3) eye(3) zeros(3,3) zeros(3,3) zeros(3,3) zeros(3,1)];
-                H_ZERO_k = H_ZERO;
-                
-                zero_hat = vel_b; % Prediction
-                
-                d_z_zero = zero_meas - zero_hat;
-                block.Dwork(3).Data(8:10) = d_z_zero;
-                
-                % Measurements covariance matrix
-                R_ZERO_k = [SIGMA_MEAS_STATIC SIGMA_MEAS_STATIC SIGMA_MEAS_STATIC];
-                
-            end
-
-            % Prediction stage
-            H_KF_EULER_DVL_BARO_ZERO_k = [H_EULER_k; H_DVL_k; H_BARO_k;H_ZERO_k]; % H matrix for EKF
+            P =(P+P')/2; % Symmetrization
             
-            % Measurements
-            d_z_euler_dvl_baro_zero = [d_z_euler;d_z_dvl;d_z_baro;d_z_zero];
-            
-            % Measurements noise covariance
-            R_EULER_DVL_BARO_ZERO_k = diag([R_EULER_k R_DVL_k R_BARO_k R_ZERO_k]);
-            
-            % Kalman gain calculation
-            K_EULER_DVL_BARO_ZERO = P*H_KF_EULER_DVL_BARO_ZERO_k'/(H_KF_EULER_DVL_BARO_ZERO_k*P*H_KF_EULER_DVL_BARO_ZERO_k'+ R_EULER_DVL_BARO_ZERO_k);
-            
-            d_x_hat = K_EULER_DVL_BARO_ZERO*d_z_euler_dvl_baro_zero;
-            
-            % Update state covariance matrix using 'Joseph form'
-            P = (eye(16) - K_EULER_DVL_BARO_ZERO*H_KF_EULER_DVL_BARO_ZERO_k)*...
-                P*(eye(16) - K_EULER_DVL_BARO_ZERO*H_KF_EULER_DVL_BARO_ZERO_k)' +...
-                K_EULER_DVL_BARO_ZERO*R_EULER_DVL_BARO_ZERO_k*K_EULER_DVL_BARO_ZERO';
-            
-            % State covariance matrix diagonalization
-            P = (P + P')/2;
-            
-            block.Dwork(2).Data = d_x_hat;
+            block.Dwork(2).Data= zeros(16,1);
         else
             block.Dwork(2).Data= zeros(16,1);
         end
@@ -699,3 +632,24 @@ function depth = depth_calc(BARO)
 end
 
 
+function [X_k_update, R_b_n] = updateStates(X_k, dX)
+    
+    X_k_update = zeros(17,1);
+
+    X_k_update(1:3) = X_k(1:3) + dX(1:3);
+    X_k_update(4:6) = X_k(4:6) + dX(4:6);
+    X_k_update(11:13) = X_k(11:13) + dX(10:12);
+    X_k_update(14:16) = X_k(14:16) + dX(13:15);
+    X_k_update(17) = X_k(17) + dX(16);
+    
+    b_k = X_k(7:10);
+    R_n_b_hat = quat2Rot(b_k); % Transform from quaternion to DCM
+    R_b_n_hat = R_n_b_hat'; % Transpose rotation matrix
+    rho = dX(7:9); % Extract small-angle rotations vector
+    Prho = skew_matrix(rho); % Equation (10.28) - Farrell
+    R_b_n = (eye(3) + Prho)*R_b_n_hat; % Apply correction - Equation (10.32) - Farrell
+    R_n_b = R_b_n'; % Transpose rotation matrix
+    b_k_plus_one = Rot2Quat(R_n_b); % Transform from DCM to quaternion
+    X_k_update(7:10) = b_k_plus_one;
+    
+end
