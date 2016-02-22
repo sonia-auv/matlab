@@ -389,7 +389,7 @@ function Update(block)
                 inv_Omega_T = inv(Omega_T);
                 
                 H_MAG = [zeros(1,3) zeros(1,3) inv_Omega_T(3,:) zeros(1,3) zeros(1,3) zeros(1,1)];
-                R_MAG = SIGMA_MEAS_MAG;
+                R_MAG = SIGMA_MEAS_MAG^2;
                 K_MAG = P*H_MAG' / (H_MAG*P*H_MAG' + R_MAG);
                 
                 d_z_mag = yaw - yaw_hat;
@@ -415,7 +415,8 @@ function Update(block)
                 H_DVL = [zeros(3,3) eye(3) zeros(3,3) zeros(3,3) skew_l_pD zeros(3,1)];
                 R_DVL = diag([SIGMA_MEAS_DVL_X SIGMA_MEAS_DVL_Y SIGMA_MEAS_DVL_Z]);
 
-                K_DVL = P*H_DVL' / (H_DVL*P*H_DVL' + R_DVL);
+                S_DVL = H_DVL*P*H_DVL' + R_DVL;
+                K_DVL = P*H_DVL' / S_DVL;
                 P = (eye(16)-K_DVL*H_DVL)*P;
 
                 DVL_hat = R_n_b*vel_n + cross(w_ib_b,l_pD); % Prediction

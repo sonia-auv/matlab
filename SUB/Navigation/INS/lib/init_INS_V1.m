@@ -53,7 +53,7 @@ ACTIVE = [active_gravity active_mag active_DVL active_BARO];
 % Gravity measurements variances
 SIGMA_MEAS_GRAVITY = 10;
 % Magneto measurements variances
-SIGMA_MEAS_MAG = 20;
+SIGMA_MEAS_MAG = 5;
 % DVL measurements variances
 SIGMA_MEAS_DVL_X = 3;
 SIGMA_MEAS_DVL_Y = 3;
