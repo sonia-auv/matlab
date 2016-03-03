@@ -41,7 +41,7 @@ t_simulation = t_end-t_start
 %%%%%%%%%%%%%%%%%%%%%%%
 
 % Controls
-active_gravity = 1;
+active_gravity = 1; % 1 active / -1 not active
 active_mag = 1;
 active_DVL = -1;
 active_BARO = -1;
@@ -120,6 +120,13 @@ Sensors_MAG = [
     -DATA_MAG(4,start_record_MAG:final_record_MAG); % MagZ - IMU reversed on sub
     ];
 save Sensors_MAG Sensors_MAG
+
+% tmp
+for i = 1:size(Sensors_MAG,2)
+    Sensors_BARO(1,i) = Sensors_MAG(1,i);
+    Sensors_BARO(2,i) = Sensors_MAG(2,i);
+end
+save Sensors_BARO Sensors_BARO
 
 start_record_DVL = find(DATA_DVL(1,:) >= t_start,1,'first');
 final_record_DVL = find(DATA_DVL(1,:) >= t_end,1,'first');

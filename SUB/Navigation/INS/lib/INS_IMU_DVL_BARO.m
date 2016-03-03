@@ -348,7 +348,7 @@ function Update(block)
         if ( (test_stationary == ACTIVE(1)) || (magHasNewData == ACTIVE(2)) || (dvlHasNewData == ACTIVE(3)) || (baroHasNewData == ACTIVE(4)) ) % Apply correction when new measurements are available from DVL, MAG, BARO
             
             if test_stationary == ACTIVE(1)
-                disp('gravity');
+                %disp('gravity');
                 
                 skew_g_n = skew_matrix(g_n); % Equation 10.42 - Farrell
                 H_GRAVITY = [zeros(3,3) zeros(3,3) -skew_g_n zeros(3,3) zeros(3,3) zeros(3,1)];
@@ -367,7 +367,7 @@ function Update(block)
             end
             
             if magHasNewData == ACTIVE(2)
-                disp('mag');
+                %disp('mag');
                 
                 [phi,theta,psi]=quat2euler(X_k(7:10));
                 roll = phi;
