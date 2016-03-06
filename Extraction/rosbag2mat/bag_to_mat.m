@@ -35,3 +35,19 @@ DATA_DVL(1,:) = tsDVL.Time';
 DATA_DVL(2:4,:) = tsDVL.Data(:,4:6)';
 
 save DATA_DVL DATA_DVL
+
+%%
+clear;
+clc;
+
+file_name = 'odometry/2016-03-05-14-24-07.bag';
+
+bag = rosbag(file_name);
+bagODOM = select(bag, 'Topic', 'proc_navigation/odom');
+
+ [tsODOM, colsODOM] = timeseries(bagODOM);
+
+DATA_ODOM(1,:) = tsODOM.Time';
+DATA_ODOM(2:5,:) = tsODOM.Data(:,7:10)';
+
+save DATA_ODOM DATA_ODOM
