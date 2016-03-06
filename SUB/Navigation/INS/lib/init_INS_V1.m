@@ -53,9 +53,9 @@ ACTIVE = [active_gravity active_mag active_DVL active_BARO];
 % Measurements variances %
 %%%%%%%%%%%%%%%%%%%%%%%%%%
 % Gravity measurements variances
-SIGMA_MEAS_GRAVITY = 10;
+SIGMA_MEAS_GRAVITY = 15;
 % Magneto measurements variances
-SIGMA_MEAS_MAG = 5;
+SIGMA_MEAS_MAG = 10;
 % DVL measurements variances
 SIGMA_MEAS_DVL_X = 10;
 SIGMA_MEAS_DVL_Y = 10;
@@ -73,12 +73,12 @@ SIGMA0_VEL_Z = 0.01;
 SIGMA0_RHO_X = 0.01;
 SIGMA0_RHO_Y = 0.01;
 SIGMA0_RHO_Z = 0.01;
-SIGMA0_BIAS_ACC = 0.01;
+SIGMA0_BIAS_ACC = 0.1;
 SIGMA0_BIAS_GYR = 0.001;
 SIGMA0_BIAS_BARO = 0.001;
 
 % Propagation uncertainty
-SIGMA_MEAS_ACC = 10;
+SIGMA_MEAS_ACC = 15;
 SIGMA_MEAS_GYR = 0.01;
 SIGMA_WALK_BIAS_ACC = 0.001;
 SIGMA_WALK_BIAS_GYR = 0.001;

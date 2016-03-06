@@ -225,10 +225,14 @@ function Update(block)
     
     persistent P;
     persistent magHasNewData dvlHasNewData baroHasNewData;
+    persistent timeIMU timeMAG timeDVL timeBARO;
     
     if( isempty(P) )
         P = P0;
-    
+        timeIMU = 0;
+        timeMAG = 0;
+        timeDVL = 0;
+        timeBARO = 0;
     end
     
     time = block.InputPort(5).Data;
@@ -237,20 +241,22 @@ function Update(block)
     dvlHasNewData = 0;
     baroHasNewData = 0;
     
-    if mod(time,dt_MAG) == 0
+    if mod(time,dt_MAG) < dt
         magHasNewData = 1; % ATTENTION
     end
     
-    if mod(time,dt_DVL) == 0
+    if mod(time,dt_DVL) < dt
         dvlHasNewData = 1; % ATTENTION
     end
     
-    if mod(time,dt_BARO) == 0
+    if mod(time,dt_BARO) < dt
         baroHasNewData = 1; % ATTENTION
     end
 
     if(block.InputPort(1).IsSampleHit)
-        
+        dtcalcIMU = time - timeIMU;
+        timeIMU = time;
+
         % States extraction
         pos_n = block.Dwork(1).Data(1:3);
         vel_n = block.Dwork(1).Data(4:6);
@@ -368,7 +374,8 @@ function Update(block)
             end
             
             if magHasNewData == ACTIVE(2)
-                %disp('mag');
+                dtcalcMAG = time - timeMAG;
+                timeMAG = time;
                 
                 [phi,theta,psi]=quat2euler(X_k(7:10));
                 roll = phi;
@@ -395,7 +402,7 @@ function Update(block)
                 
                 d_z_mag = yaw - yaw_hat;
                 
-                if d_z_mag < pi
+                if abs(d_z_mag) < pi
                     d_X = K_MAG * d_z_mag;
                     [X_k, R_b_n] = updateStates(X_k, d_X);
                     R_n_b = R_b_n';
@@ -407,35 +414,41 @@ function Update(block)
             end
             
             if dvlHasNewData == ACTIVE(3)
+                dtcalcDVL = time - timeDVL;
+                timeDVL = time;
                 
                 DVL = block.InputPort(3).Data; % Extract measurements
                 
-                % Correct for heading shift
-                Rb2DVL = [cos(heading_shift_DVL) , - sin(heading_shift_DVL) , 0;
-                sin(heading_shift_DVL) , cos(heading_shift_DVL) , 0;
-                0         , 0                               , 1   ];
-            
-                DVL = Rb2DVL'*DVL;
-                
-                % Aiding Measurement Model
-                skew_l_pD = skew_matrix(l_pD);
-                H_DVL = [zeros(3,3) R_n_b zeros(3,3) zeros(3,3) skew_l_pD zeros(3,1)];
-                R_DVL = diag([SIGMA_MEAS_DVL_X SIGMA_MEAS_DVL_Y SIGMA_MEAS_DVL_Z]);
+                if norm(DVL) > 0 % Avoid corrections from NaN replaced by zeros
+                    % Correct for heading shift
+                    Rb2DVL = [cos(heading_shift_DVL) , - sin(heading_shift_DVL) , 0;
+                    sin(heading_shift_DVL) , cos(heading_shift_DVL) , 0;
+                    0         , 0                               , 1   ];
 
-                S_DVL = H_DVL*P*H_DVL' + R_DVL;
-                K_DVL = P*H_DVL' / S_DVL;
-                P = (eye(16)-K_DVL*H_DVL)*P;
-                DVL_hat = R_n_b*vel_n + cross(w_ib_b,l_pD); % Prediction
+                    DVL = Rb2DVL'*DVL;
 
-                d_z_dvl = DVL - DVL_hat;
-                d_X = K_DVL * d_z_dvl;
-                [X_k, R_b_n] = updateStates(X_k, d_X);
+                    % Aiding Measurement Model
+                    skew_l_pD = skew_matrix(l_pD);
+                    H_DVL = [zeros(3,3) R_n_b zeros(3,3) zeros(3,3) skew_l_pD zeros(3,1)];
+                    R_DVL = diag([SIGMA_MEAS_DVL_X SIGMA_MEAS_DVL_Y SIGMA_MEAS_DVL_Z]);
+
+                    S_DVL = H_DVL*P*H_DVL' + R_DVL;
+                    K_DVL = P*H_DVL' / S_DVL;
+                    P = (eye(16)-K_DVL*H_DVL)*P;
+                    DVL_hat = R_n_b*vel_n + cross(w_ib_b,l_pD); % Prediction
+
+                    d_z_dvl = DVL - DVL_hat;
+                    d_X = K_DVL * d_z_dvl;
+                    [X_k, R_b_n] = updateStates(X_k, d_X);
+                end
 
                 
                 dvlHasNewData = 0;
             end
             
             if baroHasNewData == ACTIVE(4)
+                dtcalcBARO = time - timeBARO;
+                timeBARO = time;
                 
                 baro_meas = block.InputPort(4).Data - bias_baro;
                 
