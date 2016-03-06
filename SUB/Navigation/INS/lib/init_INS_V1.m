@@ -45,7 +45,7 @@ t_simulation = t_end-t_start
 % Controls
 active_gravity = 1; % 1 active / -1 not active
 active_mag = 1;
-active_DVL = -1;
+active_DVL = 1;
 active_BARO = 1;
 ACTIVE = [active_gravity active_mag active_DVL active_BARO];
 
@@ -57,9 +57,9 @@ SIGMA_MEAS_GRAVITY = 10;
 % Magneto measurements variances
 SIGMA_MEAS_MAG = 5;
 % DVL measurements variances
-SIGMA_MEAS_DVL_X = 30;
-SIGMA_MEAS_DVL_Y = 30;
-SIGMA_MEAS_DVL_Z = 40;
+SIGMA_MEAS_DVL_X = 10;
+SIGMA_MEAS_DVL_Y = 10;
+SIGMA_MEAS_DVL_Z = 20;
 % BARO measurements variances
 SIGMA_MEAS_BARO = 40;
 
@@ -73,7 +73,7 @@ SIGMA0_VEL_Z = 0.01;
 SIGMA0_RHO_X = 0.01;
 SIGMA0_RHO_Y = 0.01;
 SIGMA0_RHO_Z = 0.01;
-SIGMA0_BIAS_ACC = 0.001;
+SIGMA0_BIAS_ACC = 0.01;
 SIGMA0_BIAS_GYR = 0.001;
 SIGMA0_BIAS_BARO = 0.001;
 
@@ -194,8 +194,8 @@ gz_mean = mean(DATA_IMU(4,start_init_IMU:start_record_IMU-1)); % ATTENTION IMU i
 %ge = norm([gx_mean;gy_mean;gz_mean])
 ge = 9.8;
 
-roll  = atan2(gy_mean,gz_mean) % Calculate initial roll angle - Equation 10.14 - Farrell
-pitch = atan2(-gx_mean , sqrt(gy_mean^2 + gz_mean^2)) % Calculate initial pitch angle - Equation 10.15 - Farrell
+roll  = atan2(gy_mean,gz_mean); % Calculate initial roll angle - Equation 10.14 - Farrell
+pitch = atan2(-gx_mean , sqrt(gy_mean^2 + gz_mean^2)); % Calculate initial pitch angle - Equation 10.15 - Farrell
 
 % Calculate rotation matrix - Equation 10.16 - Farrell
 R_b2w = [cos(pitch) , sin(pitch)*sin(roll) , sin(pitch)*cos(roll) ;
@@ -255,17 +255,15 @@ pos0 = [0;0;depth0]; % depth at surface water
 % Estimate init velocity
 
 if depth0 > 0
-    
-    yawDVL = yaw - heading_shift_DVL;
 
-    RbDVL2n = [cos(pitch)*cos(yawDVL)   , sin(roll)*sin(pitch)*cos(yawDVL) - cos(roll)*sin(yawDVL)  , cos(roll)*sin(pitch)*cos(yawDVL) + sin(roll)*sin(yawDVL);
-            cos(pitch)*sin(yawDVL)      , sin(roll)*sin(pitch)*sin(yawDVL) + cos(roll)*cos(yawDVL)  , cos(roll)*sin(pitch)*sin(yawDVL) - sin(roll)*cos(yawDVL);
-            -sin(pitch)                 , sin(roll)*cos(pitch)                                      , cos(roll)*cos(pitch)                                   ];
+    Rb2DVL = [cos(heading_shift_DVL) , - sin(heading_shift_DVL) , 0;
+            sin(heading_shift_DVL) , cos(heading_shift_DVL) , 0;
+            0         , 0                               , 1   ];
 
-    xDVL = DATA_DVL(2,start_record_BARO-1);
-    yDVL = DATA_DVL(4,start_record_BARO-1);
-    zDVL = DATA_DVL(4,start_record_BARO-1);
-    v0 = RbDVL2n*[xDVL;yDVL;zDVL]
+    xDVL = DATA_DVL(2,start_record_DVL-1);
+    yDVL = DATA_DVL(3,start_record_DVL-1);
+    zDVL = DATA_DVL(4,start_record_DVL-1);
+    v0 = R0_b_n*Rb2DVL'*[xDVL;yDVL;zDVL];
 else
     v0 = [0;0;0];
 end

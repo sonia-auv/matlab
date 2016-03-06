@@ -411,20 +411,21 @@ function Update(block)
                 DVL = block.InputPort(3).Data; % Extract measurements
                 
                 % Correct for heading shift
-                [roll, pitch, yaw] = quat2euler(X_k(7:10));
-                [Rn2b_DVL]=euler2Rot(roll,pitch,yaw+heading_shift_DVL);
+                Rb2DVL = [cos(heading_shift_DVL) , - sin(heading_shift_DVL) , 0;
+                sin(heading_shift_DVL) , cos(heading_shift_DVL) , 0;
+                0         , 0                               , 1   ];
+            
+                DVL = Rb2DVL'*DVL;
                 
                 % Aiding Measurement Model
                 skew_l_pD = skew_matrix(l_pD);
-                %H_DVL = [zeros(3,3) R_n_b zeros(3,3) zeros(3,3) skew_l_pD zeros(3,1)];
-                H_DVL = [zeros(3,3) Rn2b_DVL zeros(3,3) zeros(3,3) Rn2b_DVL*R_b_n*skew_l_pD zeros(3,1)];
+                H_DVL = [zeros(3,3) R_n_b zeros(3,3) zeros(3,3) skew_l_pD zeros(3,1)];
                 R_DVL = diag([SIGMA_MEAS_DVL_X SIGMA_MEAS_DVL_Y SIGMA_MEAS_DVL_Z]);
 
                 S_DVL = H_DVL*P*H_DVL' + R_DVL;
                 K_DVL = P*H_DVL' / S_DVL;
                 P = (eye(16)-K_DVL*H_DVL)*P;
-                %DVL_hat = R_n_b*vel_n + cross(w_ib_b,l_pD); % Prediction
-                DVL_hat = Rn2b_DVL*vel_n + Rn2b_DVL*R_b_n*cross(w_ib_b,l_pD); % Prediction
+                DVL_hat = R_n_b*vel_n + cross(w_ib_b,l_pD); % Prediction
 
                 d_z_dvl = DVL - DVL_hat;
                 d_X = K_DVL * d_z_dvl;
