@@ -226,8 +226,11 @@ function Update(block)
     persistent P;
     persistent magHasNewData dvlHasNewData baroHasNewData;
     persistent timeIMU timeMAG timeDVL timeBARO;
+    persistent i;
+    
     
     if( isempty(P) )
+        i = 0;
         P = P0;
         timeIMU = 0;
         timeMAG = 0;
@@ -254,6 +257,7 @@ function Update(block)
     end
 
     if(block.InputPort(1).IsSampleHit)
+        i = i + 1;
         dtcalcIMU = time - timeIMU;
         timeIMU = time;
 
@@ -425,7 +429,7 @@ function Update(block)
                     sin(heading_shift_DVL) , cos(heading_shift_DVL) , 0;
                     0         , 0                               , 1   ];
 
-                    DVL = Rb2DVL'*DVL;
+                    DVL = Rb2DVL'*DVL
 
                     % Aiding Measurement Model
                     skew_l_pD = skew_matrix(l_pD);

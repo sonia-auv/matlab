@@ -2,15 +2,17 @@
 clear;
 clc;
 
-data_imu = 1;
-data_mag = 1;
-data_dvl = 1;
-data_baro = 1;
-data_odom = -1;
+data_imu = -1;
+data_mag = -1;
+data_dvl = -1;
+data_baro = -1;
+data_odom = 1;
 
-file_name = 'test_20160305/2016-03-05-21-02-45_outside_water.bag';
+file_name = 'test_20160305/2016-03-05-20-55-50_square.bag';
+file_name_odom = 'odometry/2016-03-15-19-56-05.bag';
 
 bag = rosbag(file_name);
+bag_odom = rosbag(file_name_odom);
 
 if data_imu == 1
     bagIMU = select(bag, 'Topic', 'provider_imu/imu');
@@ -46,11 +48,13 @@ if data_baro == 1
     save DATA_BARO DATA_BARO
 end
 if data_odom == 1
-    bagODOM = select(bag, 'Topic', 'proc_navigation/odom');
+    bagODOM = select(bag_odom, 'Topic', 'proc_navigation/odom');
     disp('Extracting ODOM data...');
     [tsODOM, colsODOM] = timeseries(bagODOM);
     DATA_ODOM(1,:) = tsODOM.Time';
-    DATA_ODOM(2:5,:) = tsODOM.Data(:,7:10)';
+    DATA_ODOM(2:4,:) = tsODOM.Data(:,4:6)';
+    DATA_ODOM(5:7,:) = tsODOM.Data(:,11:13)';
+    DATA_ODOM(8:11,:) = tsODOM.Data(:,7:10)';
     save DATA_ODOM DATA_ODOM
 end
 disp('Data succesfully extracted...');
