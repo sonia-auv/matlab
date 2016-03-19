@@ -429,7 +429,7 @@ function Update(block)
                     sin(heading_shift_DVL) , cos(heading_shift_DVL) , 0;
                     0         , 0                               , 1   ];
 
-                    DVL = Rb2DVL'*DVL
+                    DVL = Rb2DVL'*DVL;
 
                     % Aiding Measurement Model
                     skew_l_pD = skew_matrix(l_pD);

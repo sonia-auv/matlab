@@ -25,19 +25,6 @@ global P0 Qc;
 % CONTROLS
 global ACTIVE;
 
-%%%%%%%%%%%%%%%%%%%%
-%% TIMING & RATES %%
-%%%%%%%%%%%%%%%%%%%%
-t_init = 0.5;
-t_start = max([DATA_IMU(1,1);DATA_MAG(1,1);DATA_DVL(1,1);DATA_BARO(1,1)])+t_init;
-t_end = min([DATA_IMU(1,end);DATA_MAG(1,end);DATA_DVL(1,end);DATA_BARO(1,end)]);
-dt_IMU = 1/100;
-dt = dt_IMU;
-dt_MAG = 1/100;
-dt_DVL = 1/3.5;
-dt_BARO = 0.072;
-t_simulation = t_end-t_start
-
 %%%%%%%%%%%%%%%%%%%%%%%
 %% CONTROLS & TUNING %%
 %%%%%%%%%%%%%%%%%%%%%%%
@@ -47,7 +34,34 @@ active_gravity = 1; % 1 active / -1 not active
 active_mag = 1;
 active_DVL = 1;
 active_BARO = 1;
+active_ODOM = 1;
+
+if choice == 1 || choice == 2 || choice == 4 || choice == 5 || choice == 6
+    active_ODOM = -1;
+end
+
 ACTIVE = [active_gravity active_mag active_DVL active_BARO];
+
+%%%%%%%%%%%%%%%%%%%%
+%% TIMING & RATES %%
+%%%%%%%%%%%%%%%%%%%%
+t_init = 0.5;
+delay_odom = 0.5;
+dt_IMU = 1/100;
+dt = dt_IMU;
+dt_MAG = 1/100;
+dt_DVL = 1/3.5;
+dt_BARO = 0.072;
+
+if active_ODOM == -1
+    t_start = max([DATA_IMU(1,1);DATA_MAG(1,1);DATA_DVL(1,1);DATA_BARO(1,1)])+t_init;
+    t_end = min([DATA_IMU(1,end);DATA_MAG(1,end);DATA_DVL(1,end);DATA_BARO(1,end)]);
+else
+    t_start = max([DATA_IMU(1,1);DATA_MAG(1,1);DATA_DVL(1,1);DATA_BARO(1,1);DATA_ODOM(1,delay_odom/dt)])+t_init;
+    t_end = min([DATA_IMU(1,end);DATA_MAG(1,end);DATA_DVL(1,end);DATA_BARO(1,end);DATA_ODOM(1,end)]);
+end
+
+t_simulation = t_end-t_start
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%
 % Measurements variances %
@@ -61,7 +75,7 @@ SIGMA_MEAS_DVL_X = 10;
 SIGMA_MEAS_DVL_Y = 10;
 SIGMA_MEAS_DVL_Z = 20;
 % BARO measurements variances
-SIGMA_MEAS_BARO = 40;
+SIGMA_MEAS_BARO = 40*0+1;
 
 % Kalman initialization states uncertainty
 SIGMA0_POS_X = 0.01;
@@ -112,12 +126,13 @@ Sensors_IMU = [
     -DATA_IMU(6,start_record_IMU:final_record_IMU); % GyrY - IMU reversed on sub
     -DATA_IMU(7,start_record_IMU:final_record_IMU); % GyrZ - IMU reversed on sub
     ];
+
 for i = 1:size(Sensors_IMU,1)
     for j = 1:size(Sensors_IMU,2)
         if isnan(Sensors_IMU(i,j))
-            strI = strcat(' i=',num2str(i));
-            strJ = strcat(' j=',num2str(j));
-            disp(strcat(strcat('ERROR NAN IN SENSORS IMU FOR ',strcat(strI,strJ)),' replace by 0'));
+            strI = strcat(num2str(i),',');
+            strJ = strcat(num2str(j),')');
+            disp(strcat(strcat('ERROR NAN IN SENSORS_IMU(',strcat(strI,strJ)),' replace by 0'));
             Sensors_IMU(i,j) = 0;
         end
     end
@@ -135,9 +150,9 @@ Sensors_MAG = [
 for i = 1:size(Sensors_MAG,1)
     for j = 1:size(Sensors_MAG,2)
         if isnan(Sensors_MAG(i,j))
-            strI = strcat(' i=',num2str(i));
-            strJ = strcat(' j=',num2str(j));
-            disp(strcat(strcat('ERROR NAN IN SENSORS MAG FOR ',strcat(strI,strJ)),' replace by 0'));
+            strI = strcat(num2str(i),',');
+            strJ = strcat(num2str(j),')');
+            disp(strcat(strcat('ERROR NAN IN SENSORS_MAG(',strcat(strI,strJ)),' replace by 0'));
             Sensors_MAG(i,j) = 0;
         end
     end
@@ -155,9 +170,9 @@ Sensors_DVL = [
 for i = 1:size(Sensors_DVL,1)
     for j = 1:size(Sensors_DVL,2)
         if isnan(Sensors_DVL(i,j))
-            strI = strcat(' i=',num2str(i));
-            strJ = strcat(' j=',num2str(j));
-            disp(strcat(strcat('ERROR NAN IN SENSORS DVL FOR ',strcat(strI,strJ)),' replace by 0'));
+            strI = strcat(num2str(i),',');
+            strJ = strcat(num2str(j),')');
+            disp(strcat(strcat('ERROR NAN IN SENSORS_DVL(',strcat(strI,strJ)),' replace by 0'));
             Sensors_DVL(i,j) = 0;
         end
     end
@@ -173,14 +188,42 @@ Sensors_BARO = [
 for i = 1:size(Sensors_BARO,1)
     for j = 1:size(Sensors_BARO,2)
         if isnan(Sensors_BARO(i,j))
-            strI = strcat(' i=',num2str(i));
-            strJ = strcat(' j=',num2str(j));
-            disp(strcat(strcat('ERROR NAN IN SENSORS BARO FOR ',strcat(strI,strJ)),' replace by 0'));
+            strI = strcat(num2str(i),',');
+            strJ = strcat(num2str(j),')');
+            disp(strcat(strcat('ERROR NAN IN SENSORS_BARO(',strcat(strI,strJ)),' replace by 0'));
             Sensors_BARO(i,j) = 0;
         end
     end
 end
 save Sensors_BARO Sensors_BARO
+
+start_record_ODOM = find(DATA_ODOM(1,:) >= t_start,1,'first');
+final_record_ODOM = find(DATA_ODOM(1,:) >= t_end,1,'first');
+Sensors_ODOM = [
+    DATA_ODOM(1,start_record_ODOM:final_record_ODOM)- t_start;
+    DATA_ODOM(2,start_record_ODOM-delay_odom/dt:final_record_ODOM-delay_odom/dt);
+    DATA_ODOM(3,start_record_ODOM-delay_odom/dt:final_record_ODOM-delay_odom/dt);
+    DATA_ODOM(4,start_record_ODOM-delay_odom/dt:final_record_ODOM-delay_odom/dt);
+    DATA_ODOM(5,start_record_ODOM-delay_odom/dt:final_record_ODOM-delay_odom/dt);
+    DATA_ODOM(6,start_record_ODOM-delay_odom/dt:final_record_ODOM-delay_odom/dt);
+    DATA_ODOM(7,start_record_ODOM-delay_odom/dt:final_record_ODOM-delay_odom/dt);
+    DATA_ODOM(8,start_record_ODOM-delay_odom/dt:final_record_ODOM-delay_odom/dt);
+    DATA_ODOM(9,start_record_ODOM-delay_odom/dt:final_record_ODOM-delay_odom/dt);
+    DATA_ODOM(10,start_record_ODOM-delay_odom/dt:final_record_ODOM-delay_odom/dt);
+    DATA_ODOM(11,start_record_ODOM-delay_odom/dt:final_record_ODOM-delay_odom/dt);
+    ];
+
+for i = 1:size(Sensors_ODOM,1)
+    for j = 1:size(Sensors_ODOM,2)
+        if isnan(Sensors_ODOM(i,j))
+            strI = strcat(num2str(i),',');
+            strJ = strcat(num2str(j),')');
+            disp(strcat(strcat('ERROR NAN IN SENSORS_ODOM(',strcat(strI,strJ)),' replace by 0'));
+            Sensors_ODOM(i,j) = 0;
+        end
+    end
+end
+save Sensors_ODOM Sensors_ODOM
 
 
 %%%%%%%%%%%%%%%%%%%%

@@ -24,6 +24,22 @@ load(strcat(file_name,'/DATA_IMU'));
 load(strcat(file_name,'/DATA_MAG'));
 load(strcat(file_name,'/DATA_DVL'));
 load(strcat(file_name,'/DATA_BARO'));
+if choice == 3
+    load(strcat(file_name,'/DATA_ODOM'));
+    for j = 1:(size(DATA_IMU,2))
+        DATA_ODOM(1,j) = DATA_IMU(1,j);
+    end
+else
+    for i = 1:11
+        for j = 1:(size(DATA_IMU,2))
+            if i == 1
+                DATA_ODOM(i,j) = DATA_IMU(i,j);
+            else
+                DATA_ODOM(i,j) = 0;
+            end
+        end
+    end
+end
 
 run('../lib/init_INS_V1');
 
