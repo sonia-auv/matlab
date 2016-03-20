@@ -2,17 +2,18 @@
 clear;
 clc;
 
-data_imu = -1;
-data_mag = -1;
-data_dvl = -1;
-data_baro = -1;
-data_odom = 1;
+data_imu = 1;
+data_mag = 1;
+data_dvl = 1;
+data_baro = 1;
+data_odom = -1;
 
-file_name = 'test_20160305/2016-03-05-20-55-50_square.bag';
+file_name = 'test_20160319/2016-03-19-21-10-49.bag';
 file_name_odom = 'odometry/2016-03-15-19-56-05.bag';
 
-bag = rosbag(file_name);
-bag_odom = rosbag(file_name_odom);
+if data_imu == 1 || data_mag == 1 || data_dvl == 1 || data_baro == 1
+    bag = rosbag(file_name);
+end
 
 if data_imu == 1
     bagIMU = select(bag, 'Topic', 'provider_imu/imu');
@@ -40,7 +41,7 @@ if data_dvl == 1
     save DATA_DVL DATA_DVL
 end
 if data_baro == 1
-    bagBARO = select(bag, 'Topic', 'auv6/pressure');
+    bagBARO = select(bag, 'Topic', '/provider_can/barometer_fluidpress_msgs');
     disp('Extracting BARO data...');
     [tsBARO, colsBARO] = timeseries(bagBARO);
     DATA_BARO(1,:) = tsBARO.Time';
@@ -48,6 +49,7 @@ if data_baro == 1
     save DATA_BARO DATA_BARO
 end
 if data_odom == 1
+    bag_odom = rosbag(file_name_odom);
     bagODOM = select(bag_odom, 'Topic', 'proc_navigation/odom');
     disp('Extracting ODOM data...');
     [tsODOM, colsODOM] = timeseries(bagODOM);

@@ -36,7 +36,7 @@ active_DVL = 1;
 active_BARO = 1;
 active_ODOM = 1;
 
-if choice == 1 || choice == 2 || choice == 4 || choice == 5 || choice == 6
+if choice == 1 || choice == 2 || choice == 4 || choice == 5 || choice == 6 || choice == 7
     active_ODOM = -1;
 end
 

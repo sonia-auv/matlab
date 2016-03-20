@@ -446,7 +446,6 @@ function Update(block)
                     [X_k, R_b_n] = updateStates(X_k, d_X);
                 end
 
-                
                 dvlHasNewData = 0;
             end
             

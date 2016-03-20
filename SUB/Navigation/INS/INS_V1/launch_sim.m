@@ -4,7 +4,7 @@ close all;
 
 path('../lib',path);
 
-choice = 3;
+choice = 7;
 
 if choice == 1
     file_name = 'TEST_PISCINE_20160123';
@@ -18,6 +18,8 @@ elseif choice == 5
     file_name = 'TEST_PISCINE_20160305_CIRCLE_HEADING';
 elseif choice == 6
     file_name = 'TEST_PISCINE_20160305_OUTOFWATER';
+elseif choice == 7
+    file_name = 'TEST_PISCINE_20160319';
 end
 
 load(strcat(file_name,'/DATA_IMU'));
