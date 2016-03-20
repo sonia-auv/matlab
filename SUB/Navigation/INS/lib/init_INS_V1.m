@@ -75,7 +75,7 @@ SIGMA_MEAS_DVL_X = 10;
 SIGMA_MEAS_DVL_Y = 10;
 SIGMA_MEAS_DVL_Z = 20;
 % BARO measurements variances
-SIGMA_MEAS_BARO = 40*0+1;
+SIGMA_MEAS_BARO = 40;
 
 % Kalman initialization states uncertainty
 SIGMA0_POS_X = 0.01;
