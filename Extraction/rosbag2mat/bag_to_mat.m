@@ -8,7 +8,7 @@ data_dvl = -1;
 data_baro = -1;
 data_odom = 1;
 
-file_name = 'test_20160305/2016-03-05-20-55-50_square.bag';
+file_name = 'test_20160319/2016-03-05-20-55-50_square.bag';
 file_name_odom = 'odometry/2016-03-15-19-56-05.bag';
 
 bag = rosbag(file_name);
